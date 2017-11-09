@@ -21,55 +21,35 @@ from .cached_decorators import cached, cached_clear
 __author__ = 'William Krekelberg'
 __email__ = 'wpk@nist.gov'
 
-def _parse_input_flat(df):
-    # NOTE: this version faster than below
-    _t = df.T
 
-    # setup columns
-    columns = _t.iloc[0].values
-    _t.columns = columns
-    _t.index.name = 'Sample'
+def read_input(path, header=[0, 1], index_col=0, col_to_numeric=True, **kwargs):
+    """
+    create DataFrame from input file
 
+    Parameters
+    ----------
+    path : str
+        file path
+    header : default=[0, 1]
+        header lines.  See pd.read_csv
+    index_col : default=0
+        index column, See pd.read_csv
+    col_to_numerc : bool, default=True
+        If True, convert column names to numeric values if appropriate.
+        See pd.to_numeric
 
-    _t = pd.melt(_t.iloc[1:].reset_index(), id_vars=['Sample','Class'], var_name='Feature', value_name='Area')
-    # types
-    for x in ['Sample','Feature']:
-        _t[x]= _t[x].astype(np.int)
-    for x in ['Area']:
-        _t[x] = _t[x].astype(np.float)
-    return _t#.set_index(['Sample','Class'])
+    kwargs : extra arguments to pd.read_csv
 
-def _parse_input_flat2(df):
-    _t = (
-        df
-        .transpose()
-        # renmae index
-        .rename_axis('Sample',axis=0)
-        # rename columns
-        .pipe(lambda x: x.rename(columns = x.iloc[0]))
-        # drop first row
-        .drop('Sample', axis=0)
-        .set_index('Class',append=True)
-        # rename columns
-        .rename_axis('Feature',axis=1)
-        # flatten
-        .stack('Feature',dropna=False)
-        # to dataframe
-        .reset_index(name='Area')
-        # types
-        # .assign(
-        #     Sample = lambda x: x['Sample'].astype(np.int),
-        #     Feature = lambda x: x['Feature'].astype(np.int),
-        #     Area = lambda x: x['Area'].astype(np.float)
-        # )
-    )
-    for x in ['Sample','Feature']:
-        _t[x]= _t[x].astype(np.int)
-    for x in ['Area']:
-        _t[x] = _t[x].astype(np.float)
-    return _t#.set_index(['Sample','Class'])
+    Returns
+    -------
+    df : pd.DataFrame
+    """
 
+    df = pd.read_csv(path, header=header, index_col=index_col, **kwargs)
 
+    if col_to_numeric:
+        df.rename(columns=lambda x: pd.to_numeric(x, errors='ignore'), inplace=True)
+    return df
 
 
 def _drop_leading_QC(df, leading_samples=3):
@@ -95,6 +75,7 @@ class _Threshold(object):
                  dist_kws = None,
                  dist2_kws = None,
                  vline_kws = None,
+                 xlabel=None,
                  colors = ['tab:blue','tab:orange']):
 
         """ perform operations of form df[var_name] .expr. val"""
@@ -111,6 +92,8 @@ class _Threshold(object):
         self._dist_kws = dist_kws or {}
         self._dist2_kws = dist2_kws or {}
         self._vline_kws = vline_kws or {}
+
+        self._xlabel = xlabel or self.s.name
 
     @property
     def s(self):
@@ -253,7 +236,7 @@ class _Threshold(object):
                               dist_kws=dist_kws, dist2_kws=dist2_kws, vline_kws=vline_kws)
 
         if xlabel is None:
-            xlabel = self.s.name
+            xlabel = self._xlabel
         ax.set_xlabel(xlabel)
 
 
@@ -264,29 +247,45 @@ class _FRAMe(object):
     """
     Base class for frame
     """
-    def __init__(self, data, info_data=None,
+    def __init__(self, data,
+                 info_columns=None,
+                 leading_samples=3,
                  combine_classes_on_text='Class',
                  colors=None, cmap=None):
 
         self._cache = {}
 
-        self.table = data
-        self._info_data = info_data
+        self.data = data
+        self._info_columns = info_columns or []
+        self._leading_samples = leading_samples
 
         self._combine_classes_on_text = combine_classes_on_text
-
         self._set_colors(colors, cmap)
 
-
     @property
-    def table(self):
+    def data(self):
+        """place holder for total data"""
         return self._data
 
-    @table.setter
+    @data.setter
     @cached_clear()
-    def table(self, val):
+    def data(self, val):
         self._data = val
 
+    @property
+    @cached()
+    def table(self):
+        """Flat data"""
+        return (
+            self.data
+            .drop(self._info_columns, axis=1, level=0)
+            .rename_axis('Feature', axis=0)
+            .transpose()
+            .stack('Feature', dropna=False)
+            .reset_index(name='Area')
+            .assign(Sample = lambda x: x['Sample'].astype(np.int))
+            .pipe(_drop_leading_QC, self._leading_samples)
+        )
 
     @property
     @cached()
@@ -340,32 +339,21 @@ class _FRAMe(object):
 
 
     @classmethod
-    def from_input_RFrame(cls, df, info_columns=None, leading_samples=3, **kwargs):
-        if info_columns is None:
-            info_data = None
-            info_columns = []
-        else:
-            info_data = df.set_index('Sample')[info_columns]
-
-        df = (
-            df
-            .drop(info_columns,axis=1)
-            .pipe(_parse_input_flat)
-            .pipe(_drop_leading_QC, leading_samples)
-        )
-        return cls(df, info_data=info_data, **kwargs)
-
-    @classmethod
-    def from_input_Rfile(cls, filename, info_columns=None, leading_samples=3,
+    def from_input_Rfile(cls, filename,
+                         info_columns=None, leading_samples=3,
                          read_kws=None,
                          **kwargs):
 
         read_kws = read_kws or {}
+        read_kws = dict(dict(header=[0, 1], index_col=0))
         df = pd.read_csv(filename, **read_kws)
-        return cls.from_input_RFrame(df,
-                                     info_columns=info_columns,
-                                     leading_samples=leading_samples,
-                                     **kwargs)
+
+
+
+        return cls(df,
+                   info_columns=info_columns,
+                   leading_samples=leading_samples,
+                   **kwargs)
 
 
     def _set_colors(self, colors=None, cmap=None):
@@ -396,7 +384,9 @@ class FRAMe(_FRAMe):
     ])
 
 
-    def __init__(self, data, info_data=None,
+    def __init__(self, data,
+                 info_columns=None,
+                 leading_samples=3,
                  combine_classes_on_text='Class',
                  colors=None, cmap=None,
                  **thresholds):
@@ -408,9 +398,11 @@ class FRAMe(_FRAMe):
         info_data : pandas.DataFrame
         """
 
-        super(FRAMe, self).__init__(data=data, info_data=info_data,
-                           combine_classes_on_text=combine_classes_on_text,
-                           colors=colors, cmap=cmap)
+        super(FRAMe, self).__init__(data=data,
+                                    info_columns=info_columns,
+                                    leading_samples=leading_samples,
+                                    combine_classes_on_text=combine_classes_on_text,
+                                    colors=colors, cmap=cmap)
 
 
         # setup thresholds
@@ -428,6 +420,10 @@ class FRAMe(_FRAMe):
     def filter_names(self):
         return self._default_filters.keys()
 
+    @property
+    def thresholds(self):
+        return self._thresholds
+
     # Blank Contributions
     @property
     @cached()
@@ -443,7 +439,7 @@ class FRAMe(_FRAMe):
     @property
     @cached()
     def blank_contribution(self):
-        s = self._blank_contribution['percent'].rename('blank contribution')
+        s = self._blank_contribution['percent'].rename('Blank Contribution')
         b = self._thresholds['blank_contribution']
         return _Threshold(s, '>', b,
                           colors = [self._cmap(0), self._cmap(1)],
@@ -464,7 +460,7 @@ class FRAMe(_FRAMe):
     @property
     @cached()
     def low_variability(self):
-        s = self._low_variability['percent'].rename('low variability')
+        s = self._low_variability['percent'].rename('Sample Variability')
         b = self._thresholds['low_variability']
         return _Threshold(s, '<', b,
                           colors = [self._cmap(0), self._cmap(1)],
@@ -492,11 +488,12 @@ class FRAMe(_FRAMe):
     @property
     @cached()
     def sample_count(self):
-        s = self._sample_count['count_freq'].rename('Sample Detection %')
+        s = self._sample_count['count_freq'].rename('Sample Count')
         b = self._thresholds['sample_count']
         e = '<='
         return _Threshold(s, e, b,
                           colors = [self._cmap(0), self._cmap(1)],
+                          xlabel='Sample Detection %',
                           dist_kws = dict(clip=(0, 100)))
 
 
@@ -508,11 +505,12 @@ class FRAMe(_FRAMe):
     @property
     @cached()
     def qc_count(self):
-        s = self._qc_count['count_freq'].rename('QC Detection %')
+        s = self._qc_count['count_freq'].rename('QC Count')
         b = self._thresholds['qc_count']
         e = '<='
         return _Threshold(s, e, b,
                           plotter='hist',
+                          xlabel='QC Detection %',
                           colors = [self._cmap(0), self._cmap(1)],
                           dist_kws = dict(bins=50))
 
@@ -530,10 +528,11 @@ class FRAMe(_FRAMe):
     @property
     @cached()
     def qc_rsd(self):
-        s = self._qc_rsd['rsd'].rename('QC consistency')
+        s = self._qc_rsd['rsd'].rename('QC RSD')
         b = self._thresholds['qc_rsd']
         e = '>='
         return _Threshold(s, e, b,
+                          xlabel='QC Consistency',
                           colors = [self._cmap(0), self._cmap(1)],
                           dist_kws = dict(clip=(0,100)))
 
@@ -576,35 +575,40 @@ class FRAMe(_FRAMe):
     @property
     @cached()
     def median_loq_low(self):
-        s = self._median_check['median_ratio'].rename("LOQ ratio low")
+        s = self._median_check['median_ratio'].rename("LOQ Ratio Low")
         b = self._thresholds['median_loq_low']
         e = '<='
         return _Threshold(s, e, b,
+                          xlabel='LOQ Ratio',
                           colors=[self._cmap(0), self._cmap(1)],
                           dist_kws=dict(clip=(0,100)))
 
     @property
     @cached()
     def median_loq_high(self):
-        s = self._median_check['median_ratio'].rename("LOQ ratio high")
+        s = self._median_check['median_ratio'].rename("LOQ Ratio High")
         b = self._thresholds['median_loq_high']
         e = '<='
         return _Threshold(s, e, b,
+                          xlabel='LOQ Ratio',
                           colors=[self._cmap(0), self._cmap(1)],
                           dist_kws=dict(clip=(0,100)))
 
 
     @property
     @cached()
-    def Features_index(self):
+    def Features(self):
         return pd.Index(self.table['Feature'].sort_values().unique(), name='Feature')
 
+    @property
+    def nFeatures(self):
+        return len(self.Features)
 
 
     @property
     @cached()
     def _wide_remove_num(self):
-        idx = self.Features_index
+        idx = self.Features
         out = pd.DataFrame(None, idx)
 
         for filt in self.filter_names:
@@ -639,20 +643,27 @@ class FRAMe(_FRAMe):
     def _remove(self):
         return self._wide_remove.stack('Filter')
 
-    @property
-    @cached()
-    def nFeatures(self):
-        return len(self.Features_index)
 
     @property
     @cached()
+    def Features_remove(self):
+        msk = self._wide_remove['all filters']
+        return self.Features[msk]
+
+    @property
+    @cached()
+    def Features_keep(self):
+        msk = ~self._wide_remove['all filters']
+        return self.Features[msk]
+
+
+    @property
     def nFeatures_remove(self):
-        return self._wide_remove['all filters'].sum()
+        return len(self.Features_remove)
 
     @property
-    @cached()
     def nFeatures_keep(self):
-        return self.nFeatures - self.nFeatures_remove
+        return len(self.Features_keep)
 
 
     def map_remove(self, ax=None, yticklabels=1000, cbar_kws=None):
@@ -722,4 +733,16 @@ class FRAMe(_FRAMe):
             L.append(line)
 
         return pd.DataFrame(L, columns=['removed','filter',' ','   '])
+
+
+
+
+    def remove_to_csv(self, fname, **kwargs):
+        pass
+
+
+
+
+    def keep_to_csv(self, fname, **kwargs):
+        pass
 
