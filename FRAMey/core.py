@@ -15,12 +15,6 @@ import seaborn.apionly as sns
 from matplotlib.colors import LinearSegmentedColormap
 
 from .cached_decorators import cached, cached_clear
-        blank_c        blank_contribution, median_loq_low, median_loq_high,
-        qc_count, qc_rsd, sample_count, low_variability : floats
-            Thresholds
-ontribution, median_loq_low, median_loq_high,
-        qc_count, qc_rsd, sample_count, low_variability : floats
-            Thresholds
 
 
 
