@@ -1,0 +1,12 @@
+#+TITLE: Feature Reduction Assistant for Metabolomics
+
+
+
+* Installation
+
+** other packages
+
+#+BEGIN_SRC 
+conda install anaconda
+pip install git+https://github.com/wpk-nist-gov/FRAMey.git@develop
+#+END_SRC
