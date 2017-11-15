@@ -1,12 +1,16 @@
 #+TITLE: Feature Reduction Assistant for Metabolomics
 
+* Example usage
 
+See [[file:examples/example_usage.ipynb][example notebook]] 
 
 * Installation
 
-** other packages
-
 #+BEGIN_SRC 
 conda install anaconda
-pip install git+https://github.com/wpk-nist-gov/FRAMey.git@develop
+pip install -U git+https://github.com/wpk-nist-gov/FRAMey.git@develop
 #+END_SRC
+
+ - Note that the pip install doesn't handle requirements.  This is on purpose for now. 
+The anaconda distribution has everything you need.  
+ - The package should work with python 2.7 or 3.6
