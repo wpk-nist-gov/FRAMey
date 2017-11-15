@@ -883,7 +883,8 @@ class FRAMe(_FRAMe):
 
         # data
         #
-        c = self.table.loc[rows,self.Samples.tolist()]
+        #c = self.table.loc[rows,self.Samples.tolist()]
+        c = self.table[self.Samples.tolist()].loc[rows]
         return pd.concat((a, b, c), join='outer', axis=1).rename_axis(None, axis=0)
 
 
