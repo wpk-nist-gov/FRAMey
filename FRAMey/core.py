@@ -28,10 +28,7 @@ def read_input(path, header=[0, 1], index_col=0, col_to_numeric=True, **kwargs):
 
     Parameters
     ----------
-    path : str        blank_contribution, median_loq_low, median_loq_high,
-        qc_count, qc_rsd, sample_count, low_variability : floats
-            Thresholds
-
+    path : str
         file path
     header : default=[0, 1]
         header lines.  See pd.read_csv
