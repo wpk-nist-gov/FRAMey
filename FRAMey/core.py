@@ -11,7 +11,7 @@ import os
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import seaborn.apionly as sns
+import seaborn as sns
 from matplotlib.colors import LinearSegmentedColormap
 
 from .cached_decorators import cached, cached_clear
@@ -20,7 +20,6 @@ from .cached_decorators import cached, cached_clear
 
 __author__ = 'William Krekelberg'
 __email__ = 'wpk@nist.gov'
-
 
 def read_input(path, header=[0, 1], index_col=0, col_to_numeric=True, **kwargs):
     """
@@ -51,6 +50,36 @@ def read_input(path, header=[0, 1], index_col=0, col_to_numeric=True, **kwargs):
         df.rename(columns=lambda x: pd.to_numeric(x, errors='ignore'), inplace=True)
     return df
 
+
+def load_test_data(out_file=None, read_kws=None, write_kws=None):
+    """
+    Load example dataset
+
+    Parameters
+    ----------
+    out_file : str, optional
+        if supplied, save example to file out_file
+
+    read_kws : extra arguments to read_input
+
+    write_kws : extra arguments to df.to_csv
+
+    Returns
+    -------
+    df : pd.DataFrame
+    """
+    url = 'https://raw.githubusercontent.com/wpk-nist-gov/FRAMey/develop/example_data/test_input.csv'
+
+    read_kws = read_kws or {}
+    df = read_input(url, **read_kws)
+
+    if out_file is not None:
+        ext = os.path.splitext(out_file)[1]
+        assert ext == '.csv'
+        write_kws = write_kws or {}
+        df.to_csv(out_file, **write_kws)
+
+    return df
 
 
 def _drop_leading_QC(df, leading_samples=3):
@@ -364,8 +393,10 @@ class _FRAMe(object):
                          **kwargs):
 
         read_kws = read_kws or {}
-        read_kws = dict(dict(header=[0, 1], index_col=0))
-        df = pd.read_csv(filename, **read_kws)
+        df = read_input(filename, **read_kws)
+
+        # read_kws = dict(dict(header=[0, 1], index_col=0))
+        # df = pd.read_csv(filename, **read_kws)
 
 
 
@@ -866,6 +897,7 @@ class FRAMe(_FRAMe):
         return (
             self.table[self._info_columns + self.Samples.tolist()]
             .loc[self.Features_keep]
+            .rename_axis(None,0)
         )
 
 
@@ -921,7 +953,8 @@ class FRAMe(_FRAMe):
 
 
 
-def full_analysis(path, info_columns=['Info'],
+def full_analysis(path, data=None,
+                  info_columns=['Info'],
                   leading_samples=3,
                   combine_classes_on_text='Class',
                   colors=None,
@@ -940,7 +973,9 @@ def full_analysis(path, info_columns=['Info'],
     Parameters
     ----------
     path : str
-        path to input file
+        path to input file (base for output files)
+    data : pd.DataFrame, optional
+        if present use this frame for analysis
     info_columns : list, default=['Info]
         the top level of the info columns
     combine_classes_on_text : str
@@ -960,18 +995,34 @@ def full_analysis(path, info_columns=['Info'],
     out : FRAMe object
     """
 
+    if data is None:
+        data = read_input(path)
 
-    f = FRAMe.from_input_Rfile(path,
-                               info_columns=info_columns,
-                               combine_classes_on_text=combine_classes_on_text,
-                               colors=colors,
-                               blank_contribution=blank_contribution,
-                               median_loq_low=median_loq_low,
-                               median_loq_high=median_loq_high,
-                               qc_count=qc_count,
-                               qc_rsd=qc_rsd,
-                               sample_count=sample_count,
-                               low_variability=low_variability)
+    f = FRAMe(data,
+              info_columns=info_columns,
+              combine_classes_on_text=combine_classes_on_text,
+              colors=colors,
+              blank_contribution=blank_contribution,
+              median_loq_low=median_loq_low,
+              median_loq_high=median_loq_high,
+              qc_count=qc_count,
+              qc_rsd=qc_rsd,
+              sample_count=sample_count,
+              low_variability=low_variability)
+
+
+    # f = FRAMe.from_input_Rfile(path,
+    #                            info_columns=info_columns,
+    #                            combine_classes_on_text=combine_classes_on_text,
+    #                            colors=colors,
+    #                            blank_contribution=blank_contribution,
+    #                            median_loq_low=median_loq_low,
+    #                            median_loq_high=median_loq_high,
+    #                            qc_count=qc_count,
+    #                            qc_rsd=qc_rsd,
+    #                            sample_count=sample_count,
+    #                            low_variability=low_variability)
+
 
     basename = os.path.splitext(path)[0]
     if remove_ext is not None:
@@ -990,7 +1041,22 @@ def full_analysis(path, info_columns=['Info'],
 
 
 
+def check_test_FRAMe(obj):
+    """
+    checks if output from test.csv is good
 
+    If no error, then good
+    """
+    url_remove = 'https://raw.githubusercontent.com/wpk-nist-gov/FRAMey/develop/example_data/test_excluded.csv'
+    url_keep = 'https://raw.githubusercontent.com/wpk-nist-gov/FRAMey/develop/example_data/test_remaining.csv'
+    df_remove= read_input(url_remove)
+    df_keep = read_input(url_keep)
+
+
+    pd.testing.assert_frame_equal(df_remove, obj.table_remove[df_remove.columns])
+    pd.testing.assert_frame_equal(df_keep, obj.table_keep[df_keep.columns])
+
+    
 
 
 

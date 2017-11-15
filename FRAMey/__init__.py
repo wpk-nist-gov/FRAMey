@@ -6,7 +6,7 @@ from __future__ import print_function, division, absolute_import
 
 
 from .core import (
-    read_input, FRAMe, full_analysis
+    read_input, FRAMe, full_analysis, load_test_data, check_test_FRAMe
 )
 
 
