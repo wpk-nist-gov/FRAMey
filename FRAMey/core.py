@@ -747,7 +747,7 @@ class FRAMe(_FRAMe):
 
     def map_remove(self, ax=None, yticklabels=1000, cbar_kws=None):
         if ax is None:
-            fig, ax = plt.subplots(figsize=(12,12))
+            fig, ax = plt.subplots(figsize=(10,10))
         if cbar_kws is None:
             cbar_kws = {}
 
@@ -761,7 +761,7 @@ class FRAMe(_FRAMe):
                     cbar_kws=cbar_kws)
 
 
-    def plot_dist(self, axes=None, width_per=4.0, height=4.0, despine=True, tight=True):
+    def plot_dist(self, axes=None, width_per=3.5, height=3.5, despine=True, tight=True):
         if axes is None:
             fig, axes = plt.subplots(2, 3, figsize=(3 * width_per, 2* height))
         else:
