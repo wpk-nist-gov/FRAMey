@@ -11,7 +11,12 @@ import os
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import seaborn as sns
+
+# NOTE: put seaborn inside methods that need them
+# this is because otherwise pytest in setup.py raises an error on exit
+# because seaborn import jupyter, which has some exit issues?
+# import seaborn as sns
+
 from matplotlib.colors import LinearSegmentedColormap
 
 from .cached_decorators import cached, cached_clear
@@ -51,7 +56,7 @@ def read_input(path, header=[0, 1], index_col=0, col_to_numeric=True, **kwargs):
     return df
 
 
-def load_test_data(out_file=None, read_kws=None, write_kws=None):
+def load_test_data(out_file=None, read_kws=None, write_kws=None, input_file=None):
     """
     Load example dataset
 
@@ -64,14 +69,18 @@ def load_test_data(out_file=None, read_kws=None, write_kws=None):
 
     write_kws : extra arguments to df.to_csv
 
+    input_file : str, optional
+        if present, use this file as test input.  Otherwise, grab test data from web.
+
     Returns
     -------
     df : pd.DataFrame
     """
-    url = 'https://raw.githubusercontent.com/wpk-nist-gov/FRAMey/develop/example_data/test_input.csv'
+    if input_file is None:
+        input_file = 'https://raw.githubusercontent.com/wpk-nist-gov/FRAMey/develop/example_data/test_input.csv'
 
     read_kws = read_kws or {}
-    df = read_input(url, **read_kws)
+    df = read_input(input_file, **read_kws)
 
     if out_file is not None:
         ext = os.path.splitext(out_file)[1]
@@ -182,6 +191,7 @@ class _Threshold(object):
 
 
     def _make_kde_base(self, data, ax, **kwargs):
+        import seaborn as sns
         # turn on default stuff
         kwargs = dict(dict(shade=True, bw='silverman', color=self._colors[0], alpha=1.0), **kwargs)
         sns.kdeplot(data, ax=ax, **kwargs)
@@ -387,16 +397,13 @@ class _FRAMe(object):
 
 
     @classmethod
-    def from_input_Rfile(cls, filename,
+    def from_input_Rfile(cls, path,
                          info_columns=None, leading_samples=3,
                          read_kws=None,
                          **kwargs):
 
         read_kws = read_kws or {}
-        df = read_input(filename, **read_kws)
-
-        # read_kws = dict(dict(header=[0, 1], index_col=0))
-        # df = pd.read_csv(filename, **read_kws)
+        df = read_input(path, **read_kws)
 
 
 
@@ -746,6 +753,7 @@ class FRAMe(_FRAMe):
 
 
     def map_remove(self, ax=None, yticklabels=1000, cbar_kws=None):
+        import seaborn as sns
         if ax is None:
             fig, ax = plt.subplots(figsize=(10,10))
         if cbar_kws is None:
@@ -762,6 +770,7 @@ class FRAMe(_FRAMe):
 
 
     def plot_dist(self, axes=None, width_per=3.5, height=3.5, despine=True, tight=True):
+        import seaborn as sns
         if axes is None:
             fig, axes = plt.subplots(2, 3, figsize=(3 * width_per, 2* height))
         else:
@@ -902,11 +911,9 @@ class FRAMe(_FRAMe):
         )
 
 
-
-    def summary(self, input_file=None, ofile_remove=None, ofile_keep=None):
-        from IPython.display import display, Markdown
+    def summary(self, input_file=None, remove_file=None, keep_file=None):
         import datetime, os, pwd
-
+        from IPython.display import display, Markdown
 
         if input_file is not None:
             input_file = os.path.abspath(input_file)
@@ -917,13 +924,13 @@ class FRAMe(_FRAMe):
             input_file=input_file or ''
         )
 
-        if ofile_keep is not None:
-            self.table_keep.to_csv(ofile_keep)
-            ofile_keep = os.path.abspath(ofile_keep)
+        if keep_file is not None:
+            self.table_keep.to_csv(keep_file)
+            keep_file = os.path.abspath(keep_file)
 
-        if ofile_remove is not None:
-            self.table_remove.to_csv(ofile_remove)
-            ofile_remove = os.path.abspath(ofile_remove)
+        if remove_file is not None:
+            self.table_remove.to_csv(remove_file)
+            remove_file = os.path.abspath(remove_file)
 
 
         summary = _summary_template.format(
@@ -931,8 +938,8 @@ class FRAMe(_FRAMe):
             nFeatures_remove=self.nFeatures_remove,
             nFeatures_keep=self.nFeatures_keep,
             summary_table=self.summary_remove_markdown,
-            ofile_remove=ofile_remove,
-            ofile_keep=ofile_keep
+            remove_file=remove_file,
+            keep_file=keep_file
         )
 
 
@@ -949,7 +956,46 @@ class FRAMe(_FRAMe):
         plt.show()
         disp(_dist_legend)
 
+# Templates for output
 
+_header_template="""# Feature reduction assistant for metabalomics
+### NIST Marine ESB Data Tool Development
+### FRAMey v0.1: last update November 2017
+
+---
+
+* Timestamp: {date}
+* User: {user}
+* Input data: {input_file}
+
+---
+"""
+
+_summary_template = """
+* **Total Features:** {nFeatures}
+* **Removed Features:** {nFeatures_remove}
+* **Kept Features:** {nFeatures_keep}
+
+
+{summary_table}
+
+* The reduced dataset containing features passing all filters has been saved to: {remove_file}
+* A dataset containing features removed by filters has been saved to: {keep_file}
+---
+"""
+
+
+_map_legend = """
+**Figure 1:** Visual expression of feature filtration by category.
+
+---
+"""
+
+_dist_legend = """
+**Figure 2:** Details of filter application effect. Density of occurrence for each filter metric. Red lines indicate the chosen quality thresholds. Only a reasonable range of the density curves are shown.
+
+---
+"""
 
 
 
@@ -966,6 +1012,8 @@ def full_analysis(path, data=None,
                   qc_rsd=20.0,
                   sample_count=80.0,
                   low_variability=120.0,
+                  remove_file=None,
+                  keep_file=None,
                   remove_ext='_features_excluded.csv',
                   keep_ext='_features_remaining.csv'):
     """
@@ -988,8 +1036,12 @@ def full_analysis(path, data=None,
     qc_count, qc_rsd, sample_count, low_variability : floats
             Thresholds
 
-    remove_ext, keep_ext : str
-        if None, then skip saving
+    remove_file, keep_file : str, optional
+        if supplied, save removed and keep in these files
+
+    remove_ext, keep_ext : str, optionoal.
+        if None, then skip saving.  If supplied,
+        remove (and keep) in form basename(path) + remove_ext
 
     Returns
     -------
@@ -1026,77 +1078,39 @@ def full_analysis(path, data=None,
 
 
     basename = os.path.splitext(path)[0]
-    if remove_ext is not None:
-        ofile_remove = basename + remove_ext
-    else:
-        ofile_remove = None
+    if remove_file is None:
+        if remove_ext is not None:
+            remove_file = basename + remove_ext
 
-    if keep_ext is not None:
-        ofile_keep = basename + keep_ext
-    else:
-        ofile_keep = None
+    if keep_file is None:
+        if keep_ext is not None:
+            keep_file = basename + keep_ext
 
-    f.summary(input_file=path, ofile_remove=ofile_remove, ofile_keep=ofile_keep)
+    # summarize_FRAMe(f, input_file=path, remove_file=remove_file, keep_file=keep_file)
+    f.summary(input_file=path, remove_file=remove_file, keep_file=keep_file)
 
     return f
 
 
 
-def check_test_FRAMe(obj):
+
+def check_test_FRAMe(obj, remove_file=None, keep_file=None):
     """
     checks if output from test.csv is good
 
     If no error, then good
     """
-    url_remove = 'https://raw.githubusercontent.com/wpk-nist-gov/FRAMey/develop/example_data/test_excluded.csv'
-    url_keep = 'https://raw.githubusercontent.com/wpk-nist-gov/FRAMey/develop/example_data/test_remaining.csv'
-    df_remove= read_input(url_remove)
-    df_keep = read_input(url_keep)
+    if remove_file is None:
+        remove_file = 'https://raw.githubusercontent.com/wpk-nist-gov/FRAMey/develop/example_data/test_excluded.csv'
+    if keep_file is None:
+        keep_file = 'https://raw.githubusercontent.com/wpk-nist-gov/FRAMey/develop/example_data/test_remaining.csv'
+
+    df_remove= read_input(remove_file)
+    df_keep = read_input(keep_file)
 
 
     pd.testing.assert_frame_equal(df_remove, obj.table_remove[df_remove.columns])
     pd.testing.assert_frame_equal(df_keep, obj.table_keep[df_keep.columns])
 
-    
 
 
-
-
-_header_template="""# Feature reduction assistant for metabalomics
-### NIST Marine ESB Data Tool Development
-### FRAMey v0.1: last update November 2017
-
----
-
-* Timestamp: {date}
-* User: {user}
-* Input data: {input_file}
-
----
-"""
-
-_summary_template = """
-* **Total Features:** {nFeatures}
-* **Removed Features:** {nFeatures_remove}
-* **Kept Features:** {nFeatures_keep}
-
-
-{summary_table}
-
-* The reduced dataset containing features passing all filters has been saved to: {ofile_remove}
-* A dataset containing features removed by filters has been saved to: {ofile_keep}
----
-"""
-
-
-_map_legend = """
-**Figure 1:** Visual expression of feature filtration by category.
-
----
-"""
-
-_dist_legend = """
-**Figure 2:** Details of filter application effect. Density of occurrence for each filter metric. Red lines indicate the chosen quality thresholds. Only a reasonable range of the density curves are shown.
-
----
-"""
