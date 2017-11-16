@@ -22,5 +22,8 @@ setup(name='FRAMey',
 #          'matplotlib>=2.1.0',
 #          'seaborn>=0.8.0',
       ],
+      # testing
+      setup_requires=['pytest-runner'],
+      tests_require=['pytest'],
       include_package_data=True,
       zip_safe=False)
